@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curve Control - Studio Edition v4</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --skeleton-color: rgba(0, 0, 0, 0.1);
+            --point-color: #B8CEFA;
+            --guide-color: rgba(184, 206, 250, 0.4);
+            --text-primary: #333;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: flex-start;
+            height: 100vh; background-color: var(--bg-color);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw; 
+            height: 458px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            margin-top: 150px; /* Ferah üst boşluk */
+        }
+
+        #svg-wrapper {
+            position: relative;
+            width: 346px; height: 458px;
+        }
+
+        #svg-canvas { width: 100%; height: 100%; display: block; pointer-events: none; }
+
+        .user-point, .target-preview {
+            width: 14px; height: 14px; 
+            border-radius: 50%; position: absolute;
+            transform: translate(-50%, -50%);
+        }
+
+        .user-point {
+            background-color: var(--point-color);
+            cursor: grab; z-index: 100;
+            box-shadow: 0 4px 10px rgba(184, 206, 250, 0.3);
+        }
+
+        .target-preview {
+            background-color: #e0e0e0;
+            z-index: 5; opacity: 0;
+        }
+
+        .guide-line {
+            position: absolute; background-color: var(--guide-color);
+            pointer-events: none; display: none; z-index: 50;
+        }
+        .guide-x { width: 1px; height: 100%; top: 0; }
+        .guide-y { height: 1px; width: 100%; left: 0; }
+
+        #ui-layer { 
+            margin-top: 100px; 
+            text-align: center; 
+            width: 100%; 
+            z-index: 200;
+        }
+
+        button {
+            padding: 16px 48px; 
+            background-color: #000; 
+            color: white;
+            border: none; border-radius: 2px; 
+            cursor: pointer;
+            font-weight: 600; transition: all 0.3s;
+            letter-spacing: 2px; text-transform: uppercase;
+            font-size: 0.7rem;
+        }
+
+        button:hover { letter-spacing: 4px; opacity: 0.9; }
+
+        #score-display {
+            margin-top: 25px; font-size: 1.2rem;
+            font-weight: 400; opacity: 0; color: var(--text-primary);
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="svg-wrapper">
+            <div id="guide-x" class="guide-line guide-x"></div>
+            <div id="guide-y" class="guide-line guide-y"></div>
+            
+            <svg id="svg-canvas" viewBox="0 0 346 458" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M75.0283 309.6L75.0986 311.527C75.9808 335.785 85.2227 356.157 102.07 370.488C118.943 384.841 143.641 393.3 175.7 393.3V395.3L174.187 395.293C110.339 394.764 74.8856 360.713 73.0996 311.6H2C2 395.3 70.3998 455.6 174.8 455.6C275.6 455.6 343.1 404.299 343.1 328.699C343.099 267.499 299.899 221.6 217.1 200L156.8 183.8C101.872 168.739 83.5713 150.189 83.0127 120.426L83 119C83 85.7 114.5 62.2998 168.5 62.2998L169.825 62.3057C225.788 62.7929 263.014 94.158 264.8 139.699H335.899C332.327 57.5464 266.737 2.85935 169.894 2.00977L167.6 2C74.8997 2.00007 9.2002 53.2997 9.2002 122.6L9.20703 123.988C9.82149 182.617 49.4818 221.783 136.1 245L199.1 261.199C250.4 275.599 269.3 298.1 269.3 329.6L269.293 330.546C268.75 370.492 233.743 395.3 175.7 395.3V393.3C204.697 393.3 227.644 387.049 243.283 376.004C258.847 365.011 267.3 349.191 267.3 329.6C267.3 314.301 262.733 301.327 252.009 290.387C241.222 279.382 224.061 270.287 198.591 263.134L135.602 246.937L135.592 246.934L135.582 246.932C91.7681 235.188 59.6742 219.318 38.5176 198.733C17.2939 178.083 7.2002 152.805 7.2002 122.6C7.2002 51.7346 74.3203 7.49558e-05 167.6 0C217.013 0 258.666 13.828 288.455 38.2529C318.27 62.6985 336.073 97.6603 337.897 139.612L337.988 141.699H262.877L262.802 139.778C261.924 117.397 252.288 98.586 235.977 85.3398C219.64 72.0733 196.489 64.2998 168.5 64.2998C141.758 64.2998 120.82 70.098 106.63 79.8125C92.5007 89.4856 85 103.067 85 119L85.0127 120.381C85.2768 134.565 89.6702 145.947 100.322 155.659C111.44 165.796 129.514 174.243 157.318 181.868L217.604 198.064C259.238 208.925 291.107 225.943 312.586 248.107C334.1 270.308 345.1 297.584 345.1 328.699C345.1 367.159 327.904 399.462 297.956 422.095C268.051 444.695 225.518 457.6 174.8 457.6C122.223 457.6 78.5358 442.414 47.957 416.514C17.355 390.593 1.46272e-06 354.033 0 311.6V309.6H75.0283Z" fill="black" fill-opacity="0.1"/>
+            </svg>
+        </div>
+
+        <div id="ui-layer">
+            <button id="check-btn">Verify Curves</button>
+            <div id="score-display">00.0% Accuracy</div>
+        </div>
+    </div>
+
+    <script>
+        // KESİN 14 NOKTA - Koordinatlar SVG viewBox="0 0 346 458" sistemine tam hizalıdır.
+        const targetPoints = [
+            {x: 273.05, y: 151.8}, {x: 345.1, y: 151.8}, {x: 10, y: 322.8},
+            {x: 182.3, y: 405.8}, {x: 182.3, y: 10}, {x: 355.1, y: 337.8},
+            {x: 162.3, y: 258.8}, {x: 192.55, y: 198.8}, {x: 93.3247, y: 131.8},
+            {x: 278.05, y: 337.8}, {x: 17, y: 131.8}, {x: 182.3, y: 467.6},
+            {x: 83.3247, y: 322.8}, {x: 182.3, y: 73.7999}
+        ];
+
+        const svgWrapper = document.getElementById('svg-wrapper');
+        const checkBtn = document.getElementById('check-btn');
+        const scoreDisplay = document.getElementById('score-display');
+        const gX = document.getElementById('guide-x');
+        const gY = document.getElementById('guide-y');
+        let userPoints = [];
+
+        // DÖNGÜ KESİN OLARAK 14 NOKTA ÜRETİR
+        for(let i=0; i < targetPoints.length; i++) {
+            const pt = document.createElement('div');
+            pt.className = 'user-point';
+            pt.isPlaced = false; 
+            svgWrapper.appendChild(pt);
+            
+            // YAYILIM ALANI: Harfin çevresinde, daha derli toplu bir merkezde
+            const startX = Math.random() * 450 - 50; 
+            const startY = Math.random() * 450 - 50;
+            pt.style.left = startX + 'px';
+            pt.style.top = startY + 'px';
+            
+            userPoints.push(pt);
+            startFloating(pt);
+            makeDraggable(pt);
+        }
+
+        function startFloating(el) {
+            if(el.isPlaced) return; 
+            gsap.to(el, {
+                x: "random(-25, 25)", y: "random(-25, 25)",
+                duration: "random(3, 5)", repeat: -1, yoyo: true,
+                ease: "sine.inOut"
+            });
+        }
+
+        function makeDraggable(el) {
+            let isDragging = false;
+            const start = () => { 
+                isDragging = true; el.isPlaced = true;
+                gsap.killTweensOf(el); 
+                gsap.to(el, { x: 0, y: 0, scale: 1.4, duration: 0.2 });
+            };
+
+            const move = (e) => {
+                if(!isDragging) return;
+                const rect = svgWrapper.getBoundingClientRect();
+                const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+                const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+                let posX = clientX - rect.left;
+                let posY = clientY - rect.top;
+
+                let snappedX = false, snappedY = false;
+                targetPoints.forEach(tp => {
+                    if(Math.abs(posX - tp.x) < 8) { posX = tp.x; snappedX = true; }
+                    if(Math.abs(posY - tp.y) < 8) { posY = tp.y; snappedY = true; }
+                });
+
+                gX.style.display = snappedX ? 'block' : 'none';
+                if(snappedX) gX.style.left = posX + 'px';
+                gY.style.display = snappedY ? 'block' : 'none';
+                if(snappedY) gY.style.top = posY + 'px';
+
+                el.style.left = posX + 'px';
+                el.style.top = posY + 'px';
+            };
+
+            const end = () => { 
+                isDragging = false;
+                gX.style.display = 'none'; gY.style.display = 'none';
+                gsap.to(el, { scale: 1, duration: 0.2 });
+            };
+
+            el.addEventListener('mousedown', start);
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', end);
+            el.addEventListener('touchstart', start);
+            window.addEventListener('touchmove', move, {passive: false});
+            window.addEventListener('touchend', end);
+        }
+
+        checkBtn.addEventListener('click', () => {
+            let scorePool = 0;
+            targetPoints.forEach((target) => {
+                let closestDist = Infinity;
+                userPoints.forEach(up => {
+                    const ux = parseFloat(up.style.left);
+                    const uy = parseFloat(up.style.top);
+                    const d = Math.sqrt(Math.pow(target.x - ux, 2) + Math.pow(target.y - uy, 2));
+                    if(d < closestDist) closestDist = d;
+                });
+                scorePool += Math.min(closestDist, 45);
+
+                const fb = document.createElement('div');
+                fb.className = 'target-preview';
+                fb.style.left = target.x + 'px';
+                fb.style.top = target.y + 'px';
+                svgWrapper.appendChild(fb);
+                gsap.to(fb, {opacity: 1, duration: 0.5});
+            });
+
+            const finalScore = Math.max(0, 100 - (scorePool / (targetPoints.length * 12)) * 100);
+            scoreDisplay.innerText = `${finalScore.toFixed(1)}% Accuracy`;
+            gsap.to(scoreDisplay, {opacity: 1, y: -5, duration: 0.5});
+            checkBtn.disabled = true;
+        });
+    </script>
+</body>
+</html>
