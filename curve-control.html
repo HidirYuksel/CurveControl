@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Curve Control</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --ice: #B8CEFA;
+  --ice-glow: rgba(184,206,250,0.35);
+  --ice-dim: rgba(184,206,250,0.14);
+  --guide: rgba(184,206,250,0.5);
+  --bg: #FFFFFF;
+  --ink: #1C1C1C;
+  --ink-muted: #AAAAAA;
+  --stroke-fill: rgba(0,0,0,0.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  font-family: 'DM Mono', monospace;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── HEADER ── */
+#header {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 28px 40px 0;
+  z-index: 60;
+}
+#logo-svg { display: block; }
+#live-score {
+  font-size: 0.58rem;
+  letter-spacing: 0.22em;
+  color: var(--ink-muted);
+}
+
+/* ── STAGE ── */
+#stage {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+#svg-wrapper {
+  position: absolute;
+  /* sized and positioned by JS */
+}
+
+/* SVG Canvas */
+#svg-canvas {
+  display: block;
+  pointer-events: none;
+  overflow: visible;
+}
+#s-path {
+  transition: fill 0.3s, stroke 0.3s, stroke-width 0.3s;
+}
+#s-path.docking {
+  fill: none !important;
+  stroke: var(--ice);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 8px var(--ice-glow));
+}
+
+/* Target rings — hidden during game, revealed on verify */
+.t-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 1;
+  r: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s, stroke 0.3s;
+}
+.t-ring.revealed {
+  opacity: 1;
+  stroke: rgba(0,0,0,0.15);
+  stroke-dasharray: 3 3;
+}
+.t-ring.placed-here {
+  stroke: var(--ice);
+  stroke-dasharray: none;
+}
+
+/* ── GUIDE LINES ── */
+.guide {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 40;
+  will-change: opacity;
+  transition: opacity 0.08s;
+}
+.guide-x {
+  width: 1px; height: 700px;
+  top: 50%; transform: translateY(-50%);
+  background: linear-gradient(to bottom,
+    transparent 0%, var(--guide) 28%, var(--guide) 72%, transparent 100%);
+}
+.guide-y {
+  height: 1px; width: 900px;
+  left: 50%; transform: translateX(-50%);
+  background: linear-gradient(to right,
+    transparent 0%, var(--guide) 22%, var(--guide) 78%, transparent 100%);
+}
+
+/* ── USER DOTS ── */
+.upt {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--ice);
+  position: fixed;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  z-index: 50;
+  box-shadow: 0 2px 10px var(--ice-glow);
+  will-change: left, top;
+}
+.upt.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 4px 22px var(--ice-glow), 0 0 0 2px rgba(184,206,250,0.2);
+  z-index: 90;
+}
+
+/* ── BOTTOM UI ── */
+#bottom-ui {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center;
+  padding-bottom: 36px;
+  gap: 14px;
+  z-index: 60;
+}
+#verify-btn {
+  padding: 13px 48px;
+  background: var(--ink);
+  color: var(--bg);
+  border: none;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.12s;
+}
+#verify-btn:hover:not(:disabled) { background: #333; }
+#verify-btn:active:not(:disabled) { transform: scale(0.97); }
+#verify-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+#reset-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  background: none; border: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 2px 0;
+}
+#reset-btn:hover { color: var(--ink); }
+
+#score-bar {
+  display: flex; align-items: center; gap: 14px;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+#score-track {
+  width: 140px; height: 1px;
+  background: #E8E8E8;
+  position: relative; overflow: hidden;
+}
+#score-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--ice);
+  width: 0%;
+  transition: width 0.9s cubic-bezier(0.23,1,0.32,1);
+}
+#score-text {
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: var(--ink-muted);
+  min-width: 64px;
+}
+
+/* ── SNAP LABEL ── */
+#snap-label {
+  position: fixed;
+  font-size: 0.52rem;
+  letter-spacing: 0.26em;
+  color: var(--ice);
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 80;
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <!-- Logo SVG (provided by client) -->
+  <svg id="logo-svg" width="148" height="18" viewBox="0 0 148 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13.2 10.752H16.152C15.672 14.76 12.504 17.424 8.30404 17.424C3.16804 17.424 3.91304e-05 13.68 3.91304e-05 8.71201C3.91304e-05 3.76801 3.14404 5.24521e-06 8.20804 5.24521e-06C12.768 5.24521e-06 15.36 2.90401 15.84 6.50401H12.936C12.528 4.176 10.8 2.472 8.18404 2.472C4.84804 2.472 2.90404 5.20801 2.90404 8.68801C2.90404 12.216 4.87204 14.952 8.25604 14.952C10.944 14.952 12.816 13.392 13.2 10.752ZM26.6858 11.88V5.54401H29.3258V11.76C29.3258 15.264 27.5738 17.424 23.9498 17.424C20.3258 17.424 18.5738 15.168 18.5738 11.832V5.54401H21.2138V11.928C21.2138 14.04 22.1498 15.12 23.9258 15.12C25.7258 15.12 26.6858 14.136 26.6858 11.88ZM35.0944 12.048V17.184H32.4544V5.54401H34.9984V8.37601C35.2624 6.72001 36.6304 5.54401 38.5984 5.54401H39.7264L39.6304 7.92001H38.7184C36.4144 7.92001 35.0944 9.28801 35.0944 12.048ZM45.1883 17.184L40.4363 5.54401H43.2923L46.4123 13.824L49.3643 5.54401H52.1963L47.5883 17.184H45.1883ZM61.5379 13.44H64.1779C63.6739 15.936 61.6339 17.424 58.7779 17.424C55.3459 17.424 52.9219 14.952 52.9219 11.376C52.9219 7.84801 55.2979 5.35201 58.6579 5.35201C61.9219 5.35201 64.2019 7.68001 64.2019 11.016C64.2019 11.448 64.1539 11.88 64.1299 11.976H55.5859C55.5859 13.872 56.9779 15.264 58.7539 15.264C60.2419 15.264 61.2739 14.592 61.5379 13.44ZM61.5379 10.344C61.4899 8.66401 60.3139 7.51201 58.6579 7.51201C56.9779 7.51201 55.7299 8.66401 55.6339 10.344H61.5379Z" fill="#CCCCCC"/>
+    <path d="M79.3172 10.752H82.2692C81.7892 14.76 78.6212 17.424 74.4212 17.424C69.2852 17.424 66.1172 13.68 66.1172 8.71201C66.1172 3.76801 69.2612 5.24521e-06 74.3252 5.24521e-06C78.8852 5.24521e-06 81.4772 2.90401 81.9572 6.50401H79.0532C78.6452 4.176 76.9172 2.472 74.3012 2.472C70.9652 2.472 69.0212 5.20801 69.0212 8.68801C69.0212 12.216 70.9892 14.952 74.3732 14.952C77.0612 14.952 78.9332 13.392 79.3172 10.752ZM84.211 11.4C84.211 7.84801 86.491 5.35201 90.187 5.35201C93.763 5.35201 96.091 7.87201 96.091 11.4C96.091 14.904 93.739 17.424 90.187 17.424C86.587 17.424 84.211 14.904 84.211 11.4ZM86.923 11.4C86.923 13.536 88.147 15.144 90.163 15.144C92.155 15.144 93.379 13.536 93.379 11.4C93.379 9.24001 92.155 7.632 90.163 7.632C88.147 7.632 86.923 9.24001 86.923 11.4ZM101.352 11.064V17.184H98.7122V5.54401H101.256V7.22401C102.096 6.00001 103.464 5.35201 105.024 5.35201C107.832 5.35201 109.584 7.27201 109.584 10.584V17.184H106.944V10.704C106.944 8.61601 105.96 7.632 104.376 7.632C102.504 7.632 101.352 8.90401 101.352 11.064ZM114.028 7.75201H111.028V5.52H114.028V2.4H116.572V5.52H119.596V7.75201H116.572V10.872H114.028V7.75201ZM116.572 11.76V12.84C116.572 14.232 117.076 14.856 118.708 14.856H120.004V17.088C119.404 17.136 118.828 17.184 118.132 17.184C115.348 17.184 114.028 15.84 114.028 13.056V11.76H116.572ZM124.883 12.048V17.184H122.243V5.54401H124.787V8.37601C125.051 6.72001 126.419 5.54401 128.387 5.54401H129.515L129.419 7.92001H128.507C126.203 7.92001 124.883 9.28801 124.883 12.048ZM130.242 11.4C130.242 7.84801 132.522 5.35201 136.218 5.35201C139.794 5.35201 142.122 7.87201 142.122 11.4C142.122 14.904 139.77 17.424 136.218 17.424C132.618 17.424 130.242 14.904 130.242 11.4ZM132.954 11.4C132.954 13.536 134.178 15.144 136.194 15.144C138.186 15.144 139.41 13.536 139.41 11.4C139.41 9.24001 138.186 7.632 136.194 7.632C134.178 7.632 132.954 9.24001 132.954 11.4ZM147.383 0.264005V17.184H144.743V0.264005H147.383Z" fill="#B8CEFA"/>
+  </svg>
+  <span id="live-score">0 / 14</span>
+</div>
+
+<!-- STAGE -->
+<div id="stage">
+  <div id="svg-wrapper">
+    <div id="guide-x" class="guide guide-x"></div>
+    <div id="guide-y" class="guide guide-y"></div>
+    <svg id="svg-canvas" xmlns="http://www.w3.org/2000/svg">
+      <!-- Skeleton S — stroke-only path (346×458 viewBox) -->
+      <path id="s-path"
+        fill="rgba(0,0,0,0.12)"
+        d="M75.0283 309.6L75.0986 311.527C75.9808 335.785 85.2227 356.157 102.07 370.488C118.943 384.841 143.641 393.3 175.7 393.3V395.3L174.187 395.293C110.339 394.764 74.8856 360.713 73.0996 311.6H2C2 395.3 70.3998 455.6 174.8 455.6C275.6 455.6 343.1 404.299 343.1 328.699C343.099 267.499 299.899 221.6 217.1 200L156.8 183.8C101.872 168.739 83.5713 150.189 83.0127 120.426L83 119C83 85.7 114.5 62.2998 168.5 62.2998L169.825 62.3057C225.788 62.7929 263.014 94.158 264.8 139.699H335.899C332.327 57.5464 266.737 2.85935 169.894 2.00977L167.6 2C74.8997 2.00007 9.2002 53.2997 9.2002 122.6L9.20703 123.988C9.82149 182.617 49.4818 221.783 136.1 245L199.1 261.199C250.4 275.599 269.3 298.1 269.3 329.6L269.293 330.546C268.75 370.492 233.743 395.3 175.7 395.3V393.3C204.697 393.3 227.644 387.049 243.283 376.004C258.847 365.011 267.3 349.191 267.3 329.6C267.3 314.301 262.733 301.327 252.009 290.387C241.222 279.382 224.061 270.287 198.591 263.134L135.602 246.937L135.592 246.934L135.582 246.932C91.7681 235.188 59.6742 219.318 38.5176 198.733C17.2939 178.083 7.2002 152.805 7.2002 122.6C7.2002 51.7346 74.3203 7.49558e-05 167.6 0C217.013 0 258.666 13.828 288.455 38.2529C318.27 62.6985 336.073 97.6603 337.897 139.612L337.988 141.699H262.877L262.802 139.778C261.924 117.397 252.288 98.586 235.977 85.3398C219.64 72.0733 196.489 64.2998 168.5 64.2998C141.758 64.2998 120.82 70.098 106.63 79.8125C92.5007 89.4856 85 103.067 85 119L85.0127 120.381C85.2768 134.565 89.6702 145.947 100.322 155.659C111.44 165.796 129.514 174.243 157.318 181.868L217.604 198.064C259.238 208.925 291.107 225.943 312.586 248.107C334.1 270.308 345.1 297.584 345.1 328.699C345.1 367.159 327.904 399.462 297.956 422.095C268.051 444.695 225.518 457.6 174.8 457.6C122.223 457.6 78.5358 442.414 47.957 416.514C17.355 390.593 1.46272e-06 354.033 0 311.6V309.6H75.0283Z"/>
+      <g id="rings-group"></g>
+    </svg>
+  </div>
+</div>
+
+<!-- BOTTOM UI -->
+<div id="bottom-ui">
+  <button id="verify-btn">Verify Curves</button>
+  <div id="score-bar">
+    <div id="score-track"><div id="score-fill"></div></div>
+    <span id="score-text">—</span>
+  </div>
+  <button id="reset-btn">↺ &nbsp;Reset</button>
+</div>
+
+<div id="snap-label"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+//  COORDINATE SYSTEM NOTES
+//
+//  Skeleton path  → viewBox 346 × 458  (origin 0,0)
+//  Point-included → viewBox 366 × 478  (origin 0,0), offset +10,+10
+//
+//  The "point-included" SVG is the skeleton padded by 10px on all
+//  sides.  So every circle coordinate maps back to skeleton space by:
+//      skeletonX = circleX − 10
+//      skeletonY = circleY − 10
+//
+//  We store TARGETS in skeleton (346×458) space.
+// ─────────────────────────────────────────────────────────────
+
+const OFFSET = 10; // padding between the two viewBoxes
+
+// Raw circle coords from point-included SVG → convert to skeleton space
+const CIRCLES_RAW = [
+  {cx:273.05, cy:151.8},
+  {cx:345.1,  cy:151.8},
+  {cx:10,     cy:322.8},
+  {cx:182.3,  cy:405.8},
+  {cx:182.3,  cy:10   },
+  {cx:355.1,  cy:337.8},
+  {cx:162.3,  cy:258.8},
+  {cx:192.55, cy:198.8},
+  {cx:93.3247,cy:131.8},
+  {cx:278.05, cy:337.8},
+  {cx:17,     cy:131.8},
+  {cx:182.3,  cy:467.6},
+  {cx:83.3247,cy:322.8},
+  {cx:182.3,  cy:73.7999},
+];
+
+// Convert to skeleton viewBox space
+const TARGETS = CIRCLES_RAW.map(c => ({
+  x: c.cx - OFFSET,
+  y: c.cy - OFFSET,
+}));
+
+// ─────────────────────────────────────────────────────────────
+//  CONSTANTS
+// ─────────────────────────────────────────────────────────────
+const VW = 346, VH = 458;     // skeleton viewBox
+const SNAP_PX   = 18;          // screen px — hard snap threshold on mouseup
+const PULL_ZONE = 54;          // screen px — magnetic pull zone (3× snap)
+const GUIDE_THR = 12;          // SVG units — axis-alignment guide trigger
+const DOCK_THR  = 30;          // screen px — docking highlight threshold
+
+// ─────────────────────────────────────────────────────────────
+//  DOM REFS
+// ─────────────────────────────────────────────────────────────
+const svgWrapper  = document.getElementById('svg-wrapper');
+const svgCanvas   = document.getElementById('svg-canvas');
+const ringsGroup  = document.getElementById('rings-group');
+const sPath       = document.getElementById('s-path');
+const guideXEl    = document.getElementById('guide-x');
+const guideYEl    = document.getElementById('guide-y');
+const snapLabel   = document.getElementById('snap-label');
+const verifyBtn   = document.getElementById('verify-btn');
+const resetBtn    = document.getElementById('reset-btn');
+const scoreBar    = document.getElementById('score-bar');
+const scoreFill   = document.getElementById('score-fill');
+const scoreText   = document.getElementById('score-text');
+const liveScore   = document.getElementById('live-score');
+
+// ─────────────────────────────────────────────────────────────
+//  LAYOUT
+// ─────────────────────────────────────────────────────────────
+let scale = 1, wLeft = 0, wTop = 0;
+
+function layout() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  // Reserve space: ~70px header, ~110px bottom UI
+  const padH = 80, padV = 130;
+  scale = Math.min((vw - padH) / VW, (vh - padV) / VH);
+
+  const rw = VW * scale, rh = VH * scale;
+  // Center vertically but nudge slightly upward to give bottom UI room
+  wLeft = (vw - rw) / 2;
+  wTop  = (vh - rh) / 2 - 14;
+
+  svgWrapper.style.width    = rw + 'px';
+  svgWrapper.style.height   = rh + 'px';
+  svgWrapper.style.left     = wLeft + 'px';
+  svgWrapper.style.top      = wTop  + 'px';
+  svgWrapper.style.position = 'absolute';
+
+  svgCanvas.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
+  svgCanvas.style.width  = rw + 'px';
+  svgCanvas.style.height = rh + 'px';
+}
+
+// Coordinate helpers
+const toScreen = (sx, sy) => ({ x: wLeft + sx * scale, y: wTop + sy * scale });
+const toSvg    = (px, py) => ({ x: (px - wLeft) / scale, y: (py - wTop) / scale });
+
+// ─────────────────────────────────────────────────────────────
+//  BUILD TARGET RINGS  (hidden until Verify)
+// ─────────────────────────────────────────────────────────────
+const rings = [];
+
+function buildRings() {
+  ringsGroup.innerHTML = '';
+  rings.length = 0;
+  TARGETS.forEach((t, i) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', t.x);
+    c.setAttribute('cy', t.y);
+    c.setAttribute('r', 6);
+    c.setAttribute('class', 't-ring');
+    c.dataset.i = i;
+    ringsGroup.appendChild(c);
+    rings.push(c);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────────────────────
+let pts = [];          // { el, snappedTo: -1 | targetIndex }
+let placed = 0;
+let verified = false;
+
+// ─────────────────────────────────────────────────────────────
+//  BUILD USER DOTS
+// ─────────────────────────────────────────────────────────────
+function buildDots() {
+  document.querySelectorAll('.upt').forEach(e => e.remove());
+  pts = [];
+  placed = 0;
+  verified = false;
+  updateLiveScore();
+  verifyBtn.disabled = false;
+  scoreBar.style.opacity = 0;
+  scoreFill.style.width = '0%';
+  scoreText.textContent = '—';
+  rings.forEach(r => {
+    r.classList.remove('revealed','placed-here');
+  });
+  sPath.classList.remove('docking');
+
+  const N = TARGETS.length;
+  // Scatter dots randomly within the S bounding area, avoiding edges
+  const margin = 30 * scale;
+
+  TARGETS.forEach((_, i) => {
+    const el = document.createElement('div');
+    el.className = 'upt';
+    document.body.appendChild(el);
+
+    // Random starting position within the SVG area
+    const sx = wLeft + margin + Math.random() * (VW * scale - margin * 2);
+    const sy = wTop  + margin + Math.random() * (VH * scale - margin * 2);
+    el.style.left = sx + 'px';
+    el.style.top  = sy + 'px';
+
+    pts.push({ el, snappedTo: -1 });
+
+    // Idle float — killed on drag start
+    gsap.to(el, {
+      x: `random(-10,10)`, y: `random(-10,10)`,
+      duration: `random(2.5,4.5)`, repeat: -1, yoyo: true, ease: 'sine.inOut'
+    });
+
+    el._ptIdx = i;
+    el.addEventListener('mousedown',  onPointerDown, { passive: false });
+    el.addEventListener('touchstart', onPointerDown, { passive: false });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  DRAG
+// ─────────────────────────────────────────────────────────────
+let activeIdx  = -1;
+let dragAnchor = null;  // { mx, my, ex, ey }
+
+function onPointerDown(e) {
+  e.preventDefault();
+  const el  = e.currentTarget;
+  const idx = el._ptIdx;
+  const pt  = pts[idx];
+  if (!pt) return;
+
+  // Kill idle tween, reset transform
+  gsap.killTweensOf(el);
+  gsap.set(el, { x: 0, y: 0 });
+
+  const { cx, cy } = cxy(e);
+  activeIdx  = idx;
+  dragAnchor = {
+    mx: cx, my: cy,
+    ex: parseFloat(el.style.left),
+    ey: parseFloat(el.style.top),
+  };
+
+  // Unsnap if previously placed
+  if (pt.snappedTo !== -1) {
+    rings[pt.snappedTo].classList.remove('placed-here');
+    pt.snappedTo = -1;
+    placed = Math.max(0, placed - 1);
+    updateLiveScore();
+  }
+
+  el.classList.add('is-dragging');
+  gsap.to(el, { scale: 1.3, duration: 0.15, ease: 'power2.out' });
+}
+
+document.addEventListener('mousemove', onPointerMove, { passive: false });
+document.addEventListener('touchmove', onPointerMove, { passive: false });
+
+function onPointerMove(e) {
+  if (activeIdx === -1 || !dragAnchor) return;
+  e.preventDefault();
+
+  const { cx, cy } = cxy(e);
+  const dx = cx - dragAnchor.mx;
+  const dy = cy - dragAnchor.my;
+
+  let px = dragAnchor.ex + dx;
+  let py = dragAnchor.ey + dy;
+
+  // ── Magnetic gravity (soft pull toward nearest unfilled target) ──
+  let magnetX = 0, magnetY = 0;
+  let dockingAny = false;
+
+  TARGETS.forEach((t, ti) => {
+    // Don't pull toward already-filled slots
+    if (pts.some(p => p.snappedTo === ti)) return;
+    const sc   = toScreen(t.x, t.y);
+    const dist = Math.hypot(px - sc.x, py - sc.y);
+    if (dist < DOCK_THR) dockingAny = true;
+    if (dist < PULL_ZONE) {
+      // Quadratic falloff: max 30% pull at distance 0
+      const strength = Math.pow(1 - dist / PULL_ZONE, 2) * 0.30;
+      magnetX += (sc.x - px) * strength;
+      magnetY += (sc.y - py) * strength;
+    }
+  });
+
+  px += magnetX;
+  py += magnetY;
+
+  const el = pts[activeIdx].el;
+  el.style.left = px + 'px';
+  el.style.top  = py + 'px';
+
+  // ── Docking highlight ──
+  if (dockingAny) sPath.classList.add('docking');
+  else            sPath.classList.remove('docking');
+
+  // ── Smart guides (axis-aligned to target points in SVG space) ──
+  const sp = toSvg(px, py);
+  let showX = false, showY = false, gxLeft = 0, gyTop = 0;
+
+  TARGETS.forEach(t => {
+    if (Math.abs(sp.x - t.x) < GUIDE_THR) {
+      gxLeft = toScreen(t.x, 0).x - wLeft;
+      showX  = true;
+    }
+    if (Math.abs(sp.y - t.y) < GUIDE_THR) {
+      gyTop  = toScreen(0, t.y).y - wTop;
+      showY  = true;
+    }
+  });
+
+  guideXEl.style.left    = showX ? gxLeft + 'px' : guideXEl.style.left;
+  guideXEl.style.opacity = showX ? 1 : 0;
+  guideYEl.style.top     = showY ? gyTop  + 'px' : guideYEl.style.top;
+  guideYEl.style.opacity = showY ? 1 : 0;
+}
+
+document.addEventListener('mouseup',  onPointerUp);
+document.addEventListener('touchend', onPointerUp);
+
+function onPointerUp() {
+  if (activeIdx === -1) return;
+
+  const idx = activeIdx;
+  const el  = pts[idx].el;
+  activeIdx  = -1;
+  dragAnchor = null;
+
+  // Hide guides & docking
+  guideXEl.style.opacity = 0;
+  guideYEl.style.opacity = 0;
+  sPath.classList.remove('docking');
+  el.classList.remove('is-dragging');
+
+  const px = parseFloat(el.style.left);
+  const py = parseFloat(el.style.top);
+
+  // ── Snap check ──
+  let snapped = false;
+  TARGETS.forEach((t, ti) => {
+    if (snapped) return;
+    // Skip if another dot already owns this slot
+    if (pts.some(p => p.snappedTo === ti)) return;
+
+    const sc   = toScreen(t.x, t.y);
+    const dist = Math.hypot(px - sc.x, py - sc.y);
+
+    if (dist < SNAP_PX) {
+      snapped = true;
+
+      // Snap with elastic settle
+      gsap.to(el, {
+        left: sc.x, top: sc.y,
+        scale: 1,
+        duration: 0.40, ease: 'elastic.out(1.05, 0.55)',
+        onComplete: () => tickPop(el),
+      });
+
+      // Ring pulse
+      gsap.fromTo(rings[ti],
+        { attr: { r: 12 } },
+        { attr: { r: 6 }, duration: 0.5, ease: 'elastic.out(1.2, 0.5)' }
+      );
+
+      pts[idx].snappedTo = ti;
+      placed++;
+      updateLiveScore();
+      showSnapLabel(sc.x, sc.y);
+    }
+  });
+
+  if (!snapped) {
+    // Return scale, restart idle float
+    gsap.to(el, { scale: 1, duration: 0.2, ease: 'power2.out' });
+    gsap.to(el, {
+      x: `random(-10,10)`, y: `random(-10,10)`,
+      duration: `random(2.5,4.5)`, repeat: -1, yoyo: true, ease: 'sine.inOut',
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  MICRO-INTERACTIONS
+// ─────────────────────────────────────────────────────────────
+function tickPop(el) {
+  gsap.timeline()
+    .to(el, { scale: 1.55, duration: 0.07, ease: 'power2.out' })
+    .to(el, { scale: 0.88, duration: 0.09, ease: 'power2.in'  })
+    .to(el, { scale: 1.0,  duration: 0.14, ease: 'back.out(2.5)' });
+}
+
+function showSnapLabel(sx, sy) {
+  snapLabel.textContent = 'Locked';
+  snapLabel.style.left = sx + 'px';
+  snapLabel.style.top  = (sy - 22) + 'px';
+  gsap.killTweensOf(snapLabel);
+  gsap.fromTo(snapLabel,
+    { opacity: 0, y: 5 },
+    { opacity: 1, y: 0, duration: 0.15, ease: 'power2.out',
+      onComplete: () => gsap.to(snapLabel, { opacity:0, y:-6, delay:0.65, duration:0.3 }) }
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LIVE SCORE
+// ─────────────────────────────────────────────────────────────
+function updateLiveScore() {
+  liveScore.textContent = `${placed} / ${TARGETS.length}`;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  VERIFY
+// ─────────────────────────────────────────────────────────────
+verifyBtn.addEventListener('click', () => {
+  if (verified) return;
+  verified = true;
+  verifyBtn.disabled = true;
+
+  // Reveal target rings with staggered fade-in
+  rings.forEach((r, i) => {
+    setTimeout(() => {
+      r.classList.add('revealed');
+      // If a dot is placed here, highlight differently
+      if (pts.some(p => p.snappedTo === i)) r.classList.add('placed-here');
+    }, i * 40);
+  });
+
+  // Score: per target, find nearest user dot
+  const MAX_ERR = SNAP_PX * 2.8;
+  let totalErr = 0;
+
+  TARGETS.forEach((t, ti) => {
+    const sc = toScreen(t.x, t.y);
+    let minD = Infinity;
+    pts.forEach(pt => {
+      const px = parseFloat(pt.el.style.left);
+      const py = parseFloat(pt.el.style.top);
+      const d  = Math.hypot(px - sc.x, py - sc.y);
+      if (d < minD) minD = d;
+    });
+    totalErr += Math.min(minD, MAX_ERR);
+  });
+
+  const accuracy = Math.max(0, 100 - (totalErr / (TARGETS.length * MAX_ERR)) * 100);
+
+  // Animate score bar in
+  gsap.to(scoreBar, { opacity: 1, duration: 0.5, delay: 0.3 });
+  setTimeout(() => {
+    scoreFill.style.width = accuracy.toFixed(1) + '%';
+    scoreText.textContent = accuracy.toFixed(1) + '%';
+  }, 400);
+});
+
+// ─────────────────────────────────────────────────────────────
+//  RESET
+// ─────────────────────────────────────────────────────────────
+resetBtn.addEventListener('click', () => {
+  buildDots();
+});
+
+// ─────────────────────────────────────────────────────────────
+//  RESIZE
+// ─────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  layout();
+  pts.forEach(pt => {
+    if (pt.snappedTo !== -1) {
+      const t  = TARGETS[pt.snappedTo];
+      const sc = toScreen(t.x, t.y);
+      pt.el.style.left = sc.x + 'px';
+      pt.el.style.top  = sc.y + 'px';
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────────────────────
+function cxy(e) {
+  if (e.touches       && e.touches.length)        return { cx: e.touches[0].clientX,        cy: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length) return { cx: e.changedTouches[0].clientX, cy: e.changedTouches[0].clientY };
+  return { cx: e.clientX, cy: e.clientY };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────────────────────
+layout();
+buildRings();
+buildDots();
+</script>
+</body>
+</html>
